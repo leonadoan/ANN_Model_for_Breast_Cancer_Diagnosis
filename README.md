@@ -1,4 +1,4 @@
-# A-Neural-Network-Model-for-Breast-Can-cer-Diagnosis
+# A-Neural-Network-Model-for-Breast-Cancer-Diagnosis
 
 Abstract
 
