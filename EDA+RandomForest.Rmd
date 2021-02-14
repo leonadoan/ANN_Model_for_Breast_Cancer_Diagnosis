@@ -170,43 +170,9 @@ round(apply(breast_cancer[-c(1)],2,var),3)
 
 <b>2.2 Data visualization </b>
 
-Histogram of each feature distribution
-
-```{r}
-histogram(breast_cancer$radius_mean, main = "Nuclei Radius Mean Histogram",
-     xlab = "Radius mean")
-histogram(breast_cancer$texture_mean, main = "Nuclei Texture Mean Histogram",
-     xlab = "Texture mean")
-histogram(breast_cancer$perimeter_mean, main = "Nuclei Perimeter Mean Histogram",
-     xlab = "Perimeter mean")
-histogram(breast_cancer$area_mean, main = "Nuclei Area Mean Histogram",
-     xlab = "Area mean")
-histogram(breast_cancer$smoothness_mean, 
-          main = "Nuclei Smoothness Mean Histogram", xlab = "Smoothness mean")
-histogram(breast_cancer$texture_worst, main = "Nuclei Texture Worst Histogram",
-     xlab = "Texture Worst")
-
-histogram(breast_cancer$smoothness_worst, 
-          main = "Nuclei Smoothness Worst Histogram", xlab = "Smoothness Worst")
-
-```
-
-
 <b>Histogram and density line of features distribution</b>
 
 It can be seen from the figure that the dataset is  skewed to the right except smoothness_mean
-```
-library(ggpubr)
-for (i in 2:11) {
-x = breast_cancer %>%
-  ggplot( aes(x=breast_cancer[,i], fill=diagnosis)) +
-    geom_histogram( alpha=0.8, position = 'identity') +
-   
-    labs(title=colnames(breast_cancer[i]),x= "", y = "Count")
-}
-  
-```
-
 
 
 ```{r}
