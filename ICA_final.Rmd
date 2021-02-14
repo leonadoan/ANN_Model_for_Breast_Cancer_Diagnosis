@@ -1,0 +1,343 @@
+---
+title: "Breast Cancer Dataset"
+output: 
+  html_notebook: 
+    fig_width: 6
+    fig_height: 4.5
+    fig_caption: yes
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Cmd+Shift+Enter*. 
+
+## Summary
+
+The Wisconsin breast canncer dataset includes 569 observation with a list of 10 features calculated from a digitized image of the FNA of a breast mass from a patient. The mean, standard error, and "worst" or largest (mean of the three
+largest values) of these features were computed, resulting in 30 features.
+
+The research question is how to diagnose whether or not the patient has breast cancer (B-benign, M-malignant).
+
+The data analysis strategy is as follow:
+<ol>
+
+<li>Firstly, data is loaded from database website and pre-processed. There is no missing data and duplicated data in this data set. </li>
+
+<li>Then, descriptive statistics is conducted to understand the data set. There are some issues within the data set are observed </li>
+  - Unbalance data: There are 357 benign (B) and 212 malignant observation in the dataset. The proportion B to M is 0.63 : 0.37. This might effect to the training model
+  - Various ranges of cell features values. The average feature values change from about 0.004 to 880.583, which the the standard deviation values vary from 0.003 to 569.357
+  - Skewness is another issue in this data set. As can be seen from the histogram with density line of data distribution, the data is skewed to the right, except the smoothness mean feature.
+
+<li>Correlation analysis and principal component analysis (PCA) are conducted to check multicollinearity and dimension reduction. There are some highly correlated variables in this dataset, which indicated the presence of multicollinearity.</li>
+  
+  From the PCA, it is noticed that 95% of the variance is explained with 10 principal components. The first 2 principal components, which have the most proportion of variance explained, is graphed and showed that these 2 components manage to separate the diagnosis quite well.
+  
+<li>Next step is preparation for the machine learning. The data set is first splitting into model training and model testing subsets with the ratio 80:20. Then validation subset is extracting 20% data from the training subset. Because of the various ranges of features, data normalisation is conducted  using min-max method. </li>
+  - A supervised deep learning model is used for the data classification (B or M). The model includes 1 input layer, 1 hidden layer and 1 output layer. Dropout rate of 40% are introduced between layers to avoid overfitting and potentially improve the accuracy of model performance.
+  - The common rectified linear unit (ReLU) activation function relu is used in input layer and hidden layer, while the  sigmoid activation function is used in the output layer to return output in the range of (0, 1).
+  - The following loss function, optimizer, and metrics functions are used in training the new deep learning network model: binary cross entropy, Adam (Adaptive Moment Estimation), accuracy respectively. The binary cross entropy loss function is chosen because the research question is a binary classification problem. The accuracy metrics function supports accuracy history in model training. The Adam optimizer function is chosen because it is a replacement optimization algorithm for stochastic gradient descent (SGD) for training deep learning models.
+
+<li> Benchmark: the full 30 features of data set is used for deep learning model. The accuracy of test results 99.12%. </li>
+  - Then, I check whether the reducing dimensions data set could improve model result of classification. The new data set of removing highly correlated features (threshold 0.9) is used for the model, however, the model testing accuracy is dropped to 92.92%
+  - PCA also is used to reduce dimensions of the data set. The first ten principal components are chosen as they explained majority of the variance (95%). The result from the deep learning model for the new data set using PCA is improving the training accuracy to 98.35%, however, the model testing accuracy is decreased to 98.23%
+  - The result of applying the SVM is used to compared with model results to measure the relative performance.
+
+what to do next: check balance of the training dataset
+</ol>
+
+## Technical Implementation
+### Part1: Cleaning and pre-processing data
+
+
+```{r}
+library(tidyverse)
+library(ggcorrplot)
+library(ggplot2)
+library(GGally)
+
+```
+
+<b>1.1 Load data </b>
+First, I load the dataset from database website and assign the label to the column 
+```{r}
+library(RCurl)
+data_URL = getURL('https://archive.ics.uci.edu/ml/machine-learning-databases/breast-cancer-wisconsin/wdbc.data')
+names = c('id_number', 'diagnosis', 'radius_mean', 
+         'texture_mean', 'perimeter_mean', 'area_mean', 
+         'smoothness_mean', 'compactness_mean', 
+         'concavity_mean','concave_points_mean', 
+         'symmetry_mean', 'fractal_dimension_mean',
+         'radius_se', 'texture_se', 'perimeter_se', 
+         'area_se', 'smoothness_se', 'compactness_se', 
+         'concavity_se', 'concave_points_se', 
+         'symmetry_se', 'fractal_dimension_se', 
+         'radius_worst', 'texture_worst', 
+         'perimeter_worst', 'area_worst', 
+         'smoothness_worst', 'compactness_worst', 
+         'concavity_worst', 'concave_points_worst', 
+         'symmetry_worst', 'fractal_dimension_worst')
+
+breast_cancer <- read.table(textConnection(data_URL), sep = ',', col.names = names)
+breast_cancer <- as.data.frame(breast_cancer)
+head(breast_cancer)
+```
+<b>1.2 Check missing value and duplicate </b>
+
+Second step is checking missing value. From results, there is no no missing value
+Note: map_int apply function to each element
+
+```{r}
+anyNA(breast_cancer)
+```
+
+Then, there is no duplicate ID
+
+```{r}
+
+anyDuplicated(breast_cancer$id_number)
+```
+<b>1.3 Data structure </b>
+
+The dataset includes 569 observations, including the 32 column in which 30 nuclei features, one column for patient ID and one for diagnosis.
+
+The proportion of benign to malignant is 0.63 : 0.37. It is quite imbalance, but I will check to solve this problem later or put it to implication
+
+```{r}
+library(dplyr)
+breast_cancer %>%
+  dim()
+
+breast_cancer %>% 
+  str()
+```
+
+```{r}
+# Delete ID number
+breast_cancer$id_number <- NULL
+breast_cancer$diagnosis <- as.factor(breast_cancer$diagnosis)
+summary(breast_cancer)
+```
+
+
+
+
+ 
+Check data balance:
+```{r}
+library(ggplot2)
+round(prop.table(table(breast_cancer$diagnosis)), 2)
+
+
+ggplot(breast_cancer, aes(x = diagnosis  ,fill = diagnosis)) +
+  geom_bar() +
+  theme(legend.position="none")
+
+```
+
+### Part2: Explorary data analysis
+<b>2.1 Descriptive statistics </b>
+
+As we can see in the below table, the features in this dataset are not in the same scale. Various mean value ranges of different features 
+
+```{r}
+mean = round(apply(breast_cancer[-c(1,2)],2,mean),2)
+mean
+par(las=2, mar=c(5,3,2,2))
+xx = barplot(c(mean),ylim =c(0,1000),
+        main = 'Mean of features values', col = 'blue',cex.names=1.5, cex.main=2) 
+## Add text at top of bars
+text(x = xx, y = c(mean), label = c(mean), pos = 1.5, cex = 1, col = "red")
+
+
+```
+
+
+
+
+
+Check std
+```{r}
+
+round(apply(breast_cancer[-c(1)],2,sd),3)
+
+```
+Check variance
+```{r}
+
+round(apply(breast_cancer[-c(1)],2,var),3)
+```
+
+
+<b>2.2 Data visualization </b>
+
+Histogram of each feature distribution
+
+```{r}
+histogram(breast_cancer$radius_mean, main = "Nuclei Radius Mean Histogram",
+     xlab = "Radius mean")
+histogram(breast_cancer$texture_mean, main = "Nuclei Texture Mean Histogram",
+     xlab = "Texture mean")
+histogram(breast_cancer$perimeter_mean, main = "Nuclei Perimeter Mean Histogram",
+     xlab = "Perimeter mean")
+histogram(breast_cancer$area_mean, main = "Nuclei Area Mean Histogram",
+     xlab = "Area mean")
+histogram(breast_cancer$smoothness_mean, 
+          main = "Nuclei Smoothness Mean Histogram", xlab = "Smoothness mean")
+histogram(breast_cancer$texture_worst, main = "Nuclei Texture Worst Histogram",
+     xlab = "Texture Worst")
+
+histogram(breast_cancer$smoothness_worst, 
+          main = "Nuclei Smoothness Worst Histogram", xlab = "Smoothness Worst")
+
+```
+
+
+<b>Histogram and density line of features distribution</b>
+
+It can be seen from the figure that the dataset is  skewed to the right except smoothness_mean
+```
+library(ggpubr)
+for (i in 2:11) {
+x = breast_cancer %>%
+  ggplot( aes(x=breast_cancer[,i], fill=diagnosis)) +
+    geom_histogram( alpha=0.8, position = 'identity') +
+   
+    labs(title=colnames(breast_cancer[i]),x= "", y = "Count")
+}
+  
+```
+
+
+
+```{r}
+par(mfrow=c(5, 6),mar=c(2,2,3,1))
+for (i in 2:31) {
+    hist(breast_cancer[,i], main=colnames(breast_cancer[i]), probability=TRUE, col="blue", border="white", xlab = "",ylab ="")
+    d = density(breast_cancer[,i]) 
+    lines(d, col="red", lwd=2)
+} 
+
+```
+
+```{r}
+par(mfrow=c(3, 4))
+for (i in 12:21) {
+    hist(breast_cancer[,i], main=colnames(breast_cancer[i]), probability=TRUE, col="gray", border="white", xlab = "")
+    d = density(breast_cancer[,i]) 
+    lines(d, col="red")
+} 
+```
+
+```{r}
+par(mfrow=c(3, 4))
+for (i in 22:31) {
+    hist(breast_cancer[,i], main=colnames(breast_cancer[i]), probability=TRUE, col="gray", border="white", xlab = "")
+    d = density(breast_cancer[,i]) 
+    lines(d, col="red")
+} 
+```
+
+<b>2.3 Correlation analysis </b>
+
+Correlation of total features
+As we can seen in the below figures, there are some features that are highly correlated. Therefore, there is possible that multicolinearity between variable presented in the dataset 
+
+```{r}
+
+df_corr = cor(breast_cancer %>% select(-diagnosis))
+corrplot::corrplot(df_corr, order = "hclust", tl.cex = 1, addrect = 10)
+```
+
+<b>2.3 Principal Component Analysis (PCA) </b>
+First, I use prcomp code in R to perform a principal components analysis on the given data matrix and returns the results as an object of class prcomp.
+
+```{r}
+pca_df <- prcomp(breast_cancer %>% select(-diagnosis), scale = TRUE, center = TRUE)
+summary(pca_df)
+```
+
+Next, I calculate the proportion of variance explained. With the original dataset, 95% of the variance is explained with 10 PC’s.
+
+```{r}
+#Cal variance
+pca_df_var <- pca_df$sdev^2
+
+# to compute the proportion of variance explained by each PC, divide the variance explained by total variance explained by all PCA
+pve_df <- pca_df_var / sum(pca_df_var)
+
+cum_pve <- cumsum(pve_df)
+pve_table <- tibble(comp = seq(1:ncol(breast_cancer %>% select(-diagnosis))), pve_df, cum_pve)
+
+ggplot(pve_table, aes(x = comp, y = cum_pve)) + 
+  geom_point(color = "blue") + 
+  geom_abline(intercept = 0.95, color = "red", slope = 0) + 
+  labs(x = "Number of components", y = "Cumulative Variance") +
+  ggtitle("Cummulative variance by number of components")
+```
+
+```{r}
+plot(pve_df, xlab="Principal Component",
+     ylab="Proportion of variance explained",
+     main="variance explained by each PC",
+     type='b',
+     col="red",
+     lwd=2)
+```
+
+Then we check the first 2 components, which have the most proportion of variance explained. The chart shows that these 2 components manage to separate the diagnosis quite well
+
+```{r}
+pca_check <- as_tibble(pca_df$x)  # to convert to data frame
+
+ggplot(pca_check, aes(x = PC1, y = PC2, col = breast_cancer$diagnosis)) + geom_point()
+```
+
+```{r}
+library("factoextra")
+fviz_pca_biplot(pca_df, col.ind = breast_cancer$diagnosis, 
+                col="black",alpha.var = 0.5,
+                palette = "lancet", geom = "point", repel=TRUE,
+                legend.title="Diagnosis", addEllipses = TRUE)
+```
+
+
+### Part 3: ML 
+<b>3.1Creating Training and Test Sets </b>
+using caret, p is percentage of training data
+
+```{r}
+library(caret)
+library(e1071)
+```
+
+```{r}
+
+set.seed(33)
+intrain = createDataPartition(y = breast_cancer$diagnosis, p = 0.64, list = FALSE)
+
+df_training <- breast_cancer[intrain, ]
+df_testing <-  breast_cancer[-intrain, ]
+df_control <- trainControl(method="boot")
+```
+
+
+
+```{r}
+model_rf_df <- train(diagnosis ~., data = df_training,
+                     preProcess = c("range"),
+                     method = "rf", 
+                     metric = 'Accuracy', 
+                     trControl = df_control)
+model_rf_df
+```
+
+
+```{r}
+
+prediction_rf_df <- predict(model_rf_df, df_testing)
+cm_rf_df <- confusionMatrix(prediction_rf_df, df_testing$diagnosis, positive = "M")
+cm_rf_df
+```
+
+`
+
